@@ -16,11 +16,11 @@ from scipy import sparse
 from sklearn.cluster import MiniBatchKMeans
 
 random.seed(config['random_seed'])
-breakpoint()
 
 rule combine_matrices:
     input:
-        expand(join(config["out_dir"], 'co-occurrence', 'bioconcepts2pubtatorcentral_comat_{i}.npz'), i=range(num_clusters)),
+        expand(join(config["out_dir"], 'co-occurrence', 'bioconcepts2pubtatorcentral_comat_{i}.npz'),
+               i=range(config['clustering']['num_clusters'])),
         join(config["out_dir"], 'bioconcepts2pubtatorcentral_vocab.feather')
 
 rule filter_dataset:
