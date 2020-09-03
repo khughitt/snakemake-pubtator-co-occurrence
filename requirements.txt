@@ -1,0 +1,8 @@
+conda-forge::python>=3.8
+ipython
+pyarrow
+numpy
+pandas
+scipy
+scikit-learn
+snakemake-minimal
