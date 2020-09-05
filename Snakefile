@@ -41,13 +41,45 @@ rule filter_dataset:
         # first, count the number of occurrences of each concept id
         concept_counts = dat.concept_id.value_counts()
 
+        # filter out any pubmed articles with a greater than expected number of concept
+        # ids assigned to them
+        to_keep = concept_counts.index[concept_counts <= config['pmid_max_concepts']]
+
+        mask = dat.concept_id.isin(to_keep)
+
+        # article filtering stats
+        num_kept = mask[mask].index.nunique()
+        num_total = dat.index.nunique()
+        num_dropped = num_total - num_kept
+
+        print(f"Excluding {num_dropped} / {num_total} pubmed articles with > "
+              f"{config['pmid_max_concepts']} concepts associated with them..")
+
+        dat = dat[mask]
+
         # drop concepts that only appear once; this will result in a ~80% reduction in
         # the number of terms to compare and result in a significant reduction in time.
-        to_keep = concept_counts.index[concept_counts > 1]
-        dat = dat[dat.concept_id.isin(to_keep)]
+        to_keep = concept_counts.index[concept_counts >= config['concept_id_min_freq']]
+
+        mask = dat.concept_id.isin(to_keep)
+
+        # concept_id filtering stats
+        mask_counts = mask.value_counts()
+
+        num_kept = mask_counts[True]
+        num_total = dat.shape[0]
+        num_dropped = mask_counts[False]
+
+        print(f"Excluding {num_dropped} / {num_total} concept ids which appear less than "
+              f"{config['concept_id_min_freq']} times..")
+
+        dat = dat[mask]
 
         # for now, exclude chemical / species concepts to reduce the problem size further
         dat = dat[np.logical_not(dat.type.isin(config['exclude_concepts']))]
+
+        # TODO: print removal stats
+        print("Final dataset size: {dat.shape[0]} rows")
 
         # get a list of all unique concept ids remaining
         vocab = sorted(dat.concept_id.unique())
@@ -189,9 +221,9 @@ rule build_cooccurrence_matrices:
         t0 = time.time()
         
         for counter, pmid in enumerate(pmids):
-            if counter % 10000 == 0:
+            if counter % 1000 == 0:
                 print("Processing article %d / %d (%0.2f%%)..." % (counter + 1,
-                    num_articles, 100 * (counter + 1) / num_articles))
+                        num_articles, 100 * (counter + 1) / num_articles))
 
             annots = dat[dat.pmid == pmid].ind.unique()
 
@@ -200,7 +232,7 @@ rule build_cooccurrence_matrices:
                 mat[i, j] += 1 
 
         t1 = time.time()
-        tdelt = (t1 - t0) * 60 * 60
+        tdelt = (t1 - t0) / (60 * 60)
         rate = num_articles / (t1 - t0)
 
         print("Finished building co-occurrence matrix.. (Time: %0.1f hours, Rate: %0.2f articles/second)" % (tdelt, rate))

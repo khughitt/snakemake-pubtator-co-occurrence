@@ -22,6 +22,21 @@ exclude_concepts:
   - 'Chemical'
   - 'Species'
 
+# maximum number of annotations to allow for a single pubmid identifier; in some cases, 
+# a single pmid may be associated with a very large number of unique concept ids (max
+# ~150,000) which is not expected for abstract-level annotations.
+# since these likely reflect an issue with the data generation pipeline, and have a
+# significant negative impact on this pipeline's performance, a limit can be set below
+# which will indicate the maximum number of annotations allowed for a single pubmed
+# article. any articles with more than this number of annotations will be excluded from
+# the analysis.
+pmid_max_concepts: 100
+
+# minimum number of occurences of a concept id required for it to be included in the
+# analysis; by setting to "2", all concept ids that only appear once across all articles
+# will be excluded from analysis.
+concept_id_min_freq: 2
+
 #
 # clustering settings
 # 
@@ -58,5 +73,5 @@ exclude_concepts:
 #               ids are ranked based on their prevelance across all articles and the top 
 #               N concept ids used for clustering, where "N" is specified below.
 clustering:
-  num_clusters: 100
+  num_clusters: 200
   num_concepts: 160
