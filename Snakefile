@@ -38,27 +38,28 @@ rule filter_dataset:
                           dtype={'pmid': np.int32, 'type': str, 'concept_id': str,
                                  'mentions': str, 'resource': str})
 
-        # first, count the number of occurrences of each concept id
-        concept_counts = dat.concept_id.value_counts()
+        pmid_counts = dat.pmid.value_counts()
 
         # filter out any pubmed articles with a greater than expected number of concept
         # ids assigned to them
-        to_keep = concept_counts.index[concept_counts <= config['pmid_max_concepts']]
+        to_keep = pmid_counts.index[pmid_counts <= config['pmid_max_concepts']]
 
-        mask = dat.concept_id.isin(to_keep)
+        mask = dat.pmid.isin(to_keep)
 
         # article filtering stats
-        num_kept = mask[mask].index.nunique()
-        num_total = dat.index.nunique()
+        num_kept = len(to_keep)
+        num_total = dat.pmid.nunique()
         num_dropped = num_total - num_kept
+        
+        pct_dropped = 100 * (num_dropped / num_total)
 
-        print(f"Excluding {num_dropped} / {num_total} pubmed articles with > "
-              f"{config['pmid_max_concepts']} concepts associated with them..")
+        print("Excluding %d / %d (%0.2f%%) pubmed articles with > %d concepts associated with them.." % (num_dropped, num_total, pct_dropped, config['pmid_max_concepts']))
 
-        dat = dat[mask]
+        dat = dat.loc[mask]
 
-        # drop concepts that only appear once; this will result in a ~80% reduction in
-        # the number of terms to compare and result in a significant reduction in time.
+        # next, drop concepts which appear only a small number of times
+        concept_counts = dat.concept_id.value_counts()
+
         to_keep = concept_counts.index[concept_counts >= config['concept_id_min_freq']]
 
         mask = dat.concept_id.isin(to_keep)
@@ -70,8 +71,11 @@ rule filter_dataset:
         num_total = dat.shape[0]
         num_dropped = mask_counts[False]
 
-        print(f"Excluding {num_dropped} / {num_total} concept ids which appear less than "
-              f"{config['concept_id_min_freq']} times..")
+        pct_dropped = 100 * (num_dropped / num_total)
+
+        print("Excluding %d / %d (%0.2f%%) concept ids which appear <%d times.." % (num_dropped, num_total, pct_dropped, config['concept_id_min_freq']))
+
+        breakpoint()
 
         dat = dat[mask]
 

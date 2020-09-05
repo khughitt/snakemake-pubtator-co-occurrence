@@ -19,8 +19,8 @@ random_seed: 321
 # for a complete list of concept ids included in PubTator, along with statistics about
 # their prevalence in recent versions of PubTator, refer to the README.md file.
 exclude_concepts:
-  - 'Chemical'
-  - 'Species'
+  - Chemical
+  - Species
 
 # maximum number of annotations to allow for a single pubmid identifier; in some cases, 
 # a single pmid may be associated with a very large number of unique concept ids (max
