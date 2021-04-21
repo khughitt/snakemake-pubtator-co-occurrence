@@ -1,8 +1,9 @@
-conda-forge::python>=3.8
+conda-forge::python>=3.9
 ipython
-pyarrow
+modin
 numpy
 pandas
+pyarrow>=3
 scipy
 scikit-learn
 snakemake-minimal
