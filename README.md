@@ -97,3 +97,86 @@ freq  count
 Based on the above, we can see that there are 7,525,737 annotations which only appear
 once across all annotated articles.
 
+Notes
+-----
+
+### Identifiers
+
+The same mention can be mapped to multiple concept ids:
+
+```
+               pmid  type concept_id mentions   resource   ind
+1118       27028000  Gene      56717     mTOR  GNormPlus   827
+3732       31247000  Gene       2475     mTOR  GNormPlus  2291
+...
+```
+
+In the above, '56717' refers to mouse mTOR while 2475 refers to human mTOR:
+
+- https://www.ncbi.nlm.nih.gov/gene/56717
+- https://www.ncbi.nlm.nih.gov/gene/2475
+
+Similarly same concept id can be used to refer to different mentions, e.g.:
+
+```
+dat[dat.concept_id == '2475'].groupby('mentions').concept_id.value_counts().sort_values(ascending=False)
+
+mentions                                                               concept_id
+mTOR                                                                   2475          38573
+mammalian target of rapamycin|mTOR                                     2475          19431
+mammalian target of rapamycin                                          2475           3821
+FRAP                                                                   2475           1777
+...
+```
+
+### Raw data fixes
+
+For the most recent version of `bioconcepts2pubtatorcentral.gz` analyzed (2021-03-25), a
+couple of issues were encountered in the file which had to be manually corrected before
+the file could be properly read into R/python.
+
+The first issue is the presence of malformed lines containing invalid (non-numeric)
+values for the first column, e.g.:
+
+```
+grep -n "^137900tation" bioconcepts2pubtatorcentral
+8795240:137900tation	TaggerOne
+
+grep -n "^3178ggerOne" bioconcepts2pubtatorcentral
+134424970:3178ggerOne
+
+grep -n "^ild" bioconcepts2pubtatorcentral
+144455065:ild	SR4GN
+
+grep -n "^658H" bioconcepts2pubtatorcentral
+156505469:658H:D009566	nitrate	TaggerOne
+```
+
+The second issue is the presence of lines with greater or fewer than the expected 5
+columns.
+
+These can be detected by looking for rows with more or less than 4 tabs:
+
+```
+awk '{print gsub(/\t/,"")}' bioconcepts2pubtatorcentral | grep -n -v 4
+
+2574417:8
+4690460:6
+8795240:1
+...
+```
+
+Both issues have been reported upstream.
+
+In the meantime, as a work-around, the problematic lines have been manually removed
+using sed.
+
+To detect malformed lines in the future, one can do:
+
+```
+# detects rows with more/less than 4 tabs
+awk '{print gsub(/\t/,"")}' bioconcepts2pubtatorcentral | grep -n -v 4
+
+# detect non-numeric values in first column
+grep -n -v "^[0-9]\+\t" bioconcepts2pubtatorcentral
+```
