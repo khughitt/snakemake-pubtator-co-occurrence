@@ -1,0 +1,90 @@
+#
+# Pubtator Co-occurrence Matrix Pipeline (Example Config)
+#
+version: "1.0-all"
+
+# path to pubtator annotation dump
+# source: ftp://ftp.ncbi.nlm.nih.gov/pub/lu/PubTatorCentral
+pubtator_data_path: "/data/raw/pubtator/2020-08-13/bioconcepts2pubtatorcentral.gz"
+
+# base output directory to use for output
+out_dir: "/data/proj/pubtator/2020-08-13/processed"
+
+# random seed to use during the pipeline run
+random_seed: 321
+
+# concepts to include in analysis;
+# limiting the pipeline to the specific concepts of interest can significantly reduce
+# the overall computation time and memory requirements.
+# for a complete list of concept ids included in PubTator, along with statistics about
+# their prevalence in recent versions of PubTator, refer to the README.md file.
+include_concepts:
+  - Disease
+  - Chemical
+  - Gene
+  - Species
+  - Mutation
+  - CellLine
+  - Genus
+  - Strain
+  - DomainMotif
+
+# maximum number of annotations to allow for a single pubmid identifier; in some cases,
+# a single pmid may be associated with a very large number of unique concept ids (max
+# ~150,000) which is not expected for abstract-level annotations.
+# since these likely reflect an issue with the data generation pipeline, and have a
+# significant negative impact on this pipeline's performance, a limit can be set below
+# which will indicate the maximum number of annotations allowed for a single pubmed
+# article. any articles with more than this number of annotations will be excluded from
+# the analysis.
+pmid_max_concepts: 100
+
+# minimum number of occurences of a concept id required for it to be included in the
+# analysis; by setting to "2", all concept ids that only appear once across all articles
+# will be excluded from analysis.
+concept_id_min_freq: 2
+
+#
+# clustering settings
+#
+# in order to parallelize the co-occurrence matrix, and to provide a mechanism for
+# intermediate progress to be saved, the input set of annotations is divided into
+# a number of subsets of articles. a separate co-occurrence matrix is then constructed
+# for each such subset and these sub-matrices are then combined at the end to create the
+# complete co-occurence matrix.
+#
+# because each sub-matrix is still likely to contain a large number of different
+# annotations (concepts), the construction of each of these can potentially consume a
+# significant amount of memory.
+#
+# to attempt to limit the amount of memory required for each sub-matrix, a clustering
+# step is included in the pipeline which attempts to group articles together based on
+# the similarity of their annotations. this way, the number of unique annotations
+# contained in each cluster and its corresponding co-occurrence matrix is minimized,
+# thus reducing the total amount of memory required by the sparse data structures used
+# for their construction.
+#
+# similar to the primary co-occurence matrix construction goal, however, this clustering
+# step is also limited by memory constrains.
+# due to a built-in limitation in pandas (see:
+# https://github.com/pandas-dev/pandas/issues/26314), only a small-ish number of concept
+# ids may be used to perform the clustering. in practice, i've found that limiting the
+# clustering analysis to the top ~150-160 concepts will work and should help to generate
+# meaningful clusters of related articles.
+#
+# the specific parameters for this clustering step can be configured below.
+#
+# num_clusters: the number of clusters (and corresponding sub- co-occurrence matrices)
+#               to construct
+# num_concepts: the number of pubtator concepts to use for article clustering; concept
+#               ids are ranked based on their prevelance across all articles and the top
+#               N concept ids used for clustering, where "N" is specified below.
+# scale       : whether article x concept_id binary matrix should be scaled prior to
+#               clustering.
+# pca         : whether to perform a PCA projection of the article x concept matrix
+#               prior to clustering.
+clustering:
+  num_clusters: 300
+  num_concepts: 160
+  scale: false
+  pca: false
