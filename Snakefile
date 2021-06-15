@@ -1,9 +1,10 @@
 """
 Pubtator Co-occurrence matrix pipeline (v2)
 
-KH (April 3, 2021)
+KH (May 18, 2021)
 
-Constructs a human gene-gene co-occurence matrix from pubtator central bioconcepts data.
+Processes PubtatorCentral annotations and generates some useful "clean" versions of the
+data, along with some co-occurrence matrices relating to different concepts, for Human.
 """
 import itertools
 import os
@@ -16,58 +17,215 @@ from scipy import sparse
 from scipy.io import mmread, mmwrite
 from sklearn.preprocessing import scale
 
-# os.environ["MODIN_ENGINE"] = "dask"
-# import modin.pandas as pd
-
 random.seed(config['random_seed'])
 
 out_dir = join(config["out_dir"], config["version"])
+
+if config['debug']:
+    out_dir = join(out_dir, 'sampled')
 
 #
 # Snakemake rules
 #
 rule all:
     input:
-        join(out_dir, 'filtered', 'bioconcepts2pubtatorcentral_filtered.feather')
-        # expand(join(out_dir, "submats", "{topic1}_{topic2}.mtx"), topic1=topics, topic2=topics)
-        # join(out_dir, "submats", "{topic1}_{topic2}.mtx")
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather'),
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather'),
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
+        expand(join(out_dir, 'all-genes/chemicals/{chemical}.feather'), chemical=config['chemicals'].keys()),
+        expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys())
 
-# rule split_dataset:
-#     input:
-#         join(out_dir, 'bioconcepts2pubtatorcentral_filtered.feather'),
-#         join(out_dir, 'bioconcepts2pubtatorcentral_article_clusters.feather')
-#     output: expand(join(out_dir, 'subsets', 'bioconcepts2pubtatorcentral_filtered_{i}.feather'), i=range(config['clustering']['num_clusters']))
-#     run:
-#         # load full dataset
-#         dat = pd.read_feather(input[0]).drop(['index'], axis=1)
 #
-#         pmids = list(dat.pmid.unique())
+# computes chemical-gene co-occurrence counts for:
 #
-#         # load paper cluster assignments
-#         clusters = pd.read_feather(input[1]).set_index('pmid')
+# - all chemicals
+# - specific genes
 #
-#         # split into n chunks with similar numbers of articles in each
-#         for i in clusters.cluster.unique():
-#             # get articles in cluster and store result
-#             subset_ids = clusters[clusters.cluster == i].index
-#
-#             # cluster indices start from 0 / snakemake starts from 1
-#             dat[dat.pmid.isin(subset_ids)].reset_index().to_feather(output[i])
+rule chemicals_to_genes:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather')
+    output:
+        join(out_dir, 'all-chemicals/genes/{gene}.feather')
+    params:
+        gene='{gene}'
+    run:
+        # load gene data
+        gene_dat = pd.read_feather(input[0])
 
+        # get pubmed for articles referencing the gene
+        gene_entrez = config['genes'][params.gene]
+        mask = gene_dat.concept_id == gene_entrez
+
+        gene_pmids = set(gene_dat[mask].pmid.values)
+
+        # load chemical data
+        chemical_dat = pd.read_feather(input[1])
+
+        # exclude chemicals with no associated mesh id
+        chemical_dat = chemical_dat.loc[chemical_dat.concept_id != '-']
+
+        # limit to pubtator entries for articles referencing gene
+        chemical_dat = chemical_dat[chemical_dat.pmid.isin(gene_pmids)]
+
+        # get counts for each chemical
+        counts = chemical_dat[['concept_id']].value_counts().sort_values(ascending=False)
+
+        # clean-up dataframe and add chemical symbol, etc.
+        counts = counts.reset_index()
+        counts.columns = ['mesh_id', 'n']
+
+        # load mesh/chemical mapping
+        mapping = pd.read_csv("data/mesh_chemical_mapping.tsv", sep="\t")
+        mapping.columns = ['mesh_id', 'chemical']
+
+        # for multi-mapped entrez chemicals, simply choose the first match from each group 
+        # as a representative
+        counts = counts.merge(mapping, on=['mesh_id'])
+
+        # store result
+        counts.to_feather(output[0])
+
+#
+# computes chemical-gene co-occurrence counts for:
+#
+# - all genes
+# - specific chemicals
+#
+rule genes_to_chemicals:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather'),
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
+    output:
+        join(out_dir, 'all-genes/chemicals/{chemical}.feather')
+    params:
+        chemical='{chemical}'
+    run:
+        # load chemical data
+        chemical_dat = pd.read_feather(input[0])
+
+        # get pubmed for articles referencing the chemical
+        mesh_id = config['chemicals'][params.chemical]
+        mask = chemical_dat.concept_id == mesh_id
+
+        pmids = set(chemical_dat[mask].pmid.values)
+
+        # load gene data
+        gene_dat = pd.read_feather(input[1])
+
+        # limit to entries for articles referencing chemical
+        gene_dat = gene_dat[gene_dat.pmid.isin(pmids)]
+
+        # convert from long to wide
+        #gene_dat['present'] = 1
+        #dat_wide = gene_dat.pivot_table(index='concept_id', columns='pmid', values='present', fill_value=0)
+
+        # get counts for each gene
+        counts = gene_dat[['concept_id']].value_counts().sort_values(ascending=False)
+
+        # clean-up dataframe and add gene symbol, etc.
+        counts = counts.reset_index()
+        counts.columns = ['entrez', 'n']
+
+        # load gene annotations
+        grch37 = pd.read_csv("data/grch37-annotables.tsv", sep="\t")
+
+        # drop genes with missing entrez ids and fix type for remaining ids
+        grch37 = grch37[~grch37.entrez.isna()]
+        grch37 = grch37.astype({'entrez': int}).astype({'entrez': str})
+
+        # for multi-mapped entrez genes, simply choose the first match from each group 
+        # as a representative
+        grch37 = grch37.groupby('entrez').first()
+
+        counts = counts.merge(grch37, on=['entrez'])
+
+        # store result
+        counts.to_feather(output[0])
+
+rule create_disease_subset:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
+    output:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
+    run:
+        # load filtered dataset
+        dat = pd.read_csv(input[0], sep='\t')
+
+        # create and store subset with only disease-related entries
+        dat = dat[(dat.type == 'Disease')]
+        dat.reset_index(drop=True).to_feather(output[0])
+
+rule create_chemical_subset:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
+    output:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather')
+    run:
+        # load filtered dataset
+        dat = pd.read_csv(input[0], sep='\t')
+
+        # create and store subset with only chemical-related entries
+        dat = dat[(dat.type == 'Chemical')]
+        dat.reset_index(drop=True).to_feather(output[0])
+
+rule create_gene_subset:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
+    output:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
+    run:
+        # load filtered dataset
+        dat = pd.read_csv(input[0], sep='\t')
+
+        # create a subset with only gene entries
+        dat = dat[(dat.type == 'Gene') & (dat.resource == 'GNormPlus')]
+
+        # load list of GRCh37 entrez gene ids
+        # source: https://github.com/stephenturner/annotables
+        grch37 = pd.read_csv("data/grch37-annotables.tsv", sep="\t")
+
+        # drop genes with missing entrez ids and fix type for remaining ids
+        grch37 = grch37[~grch37.entrez.isna()]
+        grch37 = grch37.astype({'entrez': int}).astype({'entrez': str})
+
+        entrez_gids = grch37.entrez.values
+
+        # limit to concept ids to human entrez gene identifiers
+        mask = dat.concept_id.isin(entrez_gids)
+        dat = dat[mask]
+
+        # store gene subset
+        dat.reset_index(drop=True).to_feather(output[0])
+
+#
+# note: currently saving filtered data as uncompressed .tsv file instead of feather due
+# to the higher memory usage for writing compressed feather files. (kh may21)
+#
 rule filter_dataset:
     input:
         config['pubtator_data_path']
     output:
-        join(out_dir, 'filtered', 'bioconcepts2pubtatorcentral_filtered.feather')
-        # join(out_dir, 'filtered', 'bioconcepts2pubtatorcentral_vocab.feather')
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
     run:
-        # load data;
-        # note: a very small number of malformed-lines containing >4 tab separators
-        # were found when processing the data and are explicitly ignored below
-        dat = pd.read_csv(input[0], sep='\t', error_bad_lines=False,
+        # load data
+        dat = pd.read_csv(input[0], sep='\t',
                           names=['pmid', 'type', 'concept_id', 'mentions', 'resource'],
                           dtype={'pmid': np.int32, 'type': str, 'concept_id': str,
                                  'mentions': str, 'resource': str})
+
+        # if debug mode is enabled, sub-sample the data to speed up development
+        if config['debug']:
+            print(f"[DEBUG] Randomly sampling {config['sample_pmids']} pubmed articles...")
+
+            sampled_pmids = np.random.choice(dat.pmid.unique(), config['sample_pmids'])
+            mask = dat.pmid.isin(sampled_pmids)
+
+            dat = dat[mask]
+
+        # keep track of original dataset size
+        num_pmids_orig = dat.pmid.nunique()
+        num_entries_orig = dat.shape[0]
 
         # limit analysis to articles relating to human research
         # note: since it is possible an article could include annotations for both
@@ -76,12 +234,12 @@ rule filter_dataset:
         human_pmids = set(dat.pmid[dat.concept_id == "9606"])
         mask = dat.pmid.isin(human_pmids)
 
-        num_total = dat.pmid.nunique()
-        num_dropped = num_total - len(human_pmids)
+        num_dropped = num_pmids_orig - len(human_pmids)
 
-        pct_dropped = 100 * (num_dropped / num_total)
+        pct_dropped = 100 * (num_dropped / num_pmids_orig)
 
-        print("Excluding %d / %d (%0.2f%%) pmids not relating to human research." % (num_dropped, num_total, pct_dropped))
+        print("Excluding %d / %d (%0.2f%%) pmids not relating to human research." %
+                (num_dropped, num_pmids_orig, pct_dropped))
 
         dat = dat[mask]
 
@@ -124,36 +282,9 @@ rule filter_dataset:
 
         dat = dat[mask]
 
-        # TODO: print removal stats
+        # print summary of filtering results
         print(f"Final dataset size: {dat.shape[0]} rows ({len(set(dat.pmid))} articles)")
-
-        # get a list of all unique concept ids remaining
-        # vocab = sorted(dat.concept_id.unique())
-
-        # map from concept ids to numeric indices to use in the output matrix
-        # mapping = {}
-        #
-        # for i, annot in enumerate(vocab):
-        #     mapping[annot] = i
-        #
-        # dat['ind'] = dat.concept_id.map(mapping)
-
-        # sort indices within each article
-        #
-        # from the docs for sparse.lil_matrix:
-        #
-        # "This is a structure for constructing sparse matrices incrementally.
-        # Note that inserting a single item can take linear time in the worst
-        # case; to construct a matrix efficiently, make sure the items are
-        # pre-sorted by index, per row."
-        #
-        # dat = dat.sort_values(['pmid', 'ind'])
+        print(f"Removed {num_entries_orig} rows in total ({num_pmids_orig} articles)") 
 
         # save filtered dataset
-        dat.reset_index(drop=True).to_feather(output[0])
-
-        # also save a complete list of the vocabulary
-        # vocab_df = dat[['type', 'concept_id', 'ind']].drop_duplicates().sort_values('ind')
-
-        # vocab_df.reset_index().drop('index', axis=1).to_feather(output[1])
-
+        dat.reset_index(drop=True).to_csv(output[0], sep='\t')
