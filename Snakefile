@@ -33,7 +33,76 @@ rule all:
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather'),
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
         expand(join(out_dir, 'all-genes/chemicals/{chemical}.feather'), chemical=config['chemicals'].keys()),
-        expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys())
+        expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys()),
+        join(out_dir, 'pmids/genes-pmids.json'),
+        join(out_dir, 'co-occurrence/genes.feather')
+
+rule gene_gene_comat:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
+    output:
+        join(out_dir, 'pmids/genes-pmids.json'),
+        join(out_dir, 'co-occurrence/genes.feather')
+    run:
+        import json
+
+        # load gene data
+        gene_dat = pd.read_feather(input[0])
+
+        # iterate over genes
+        entrez_ids = list(gene_dat.concept_id.unique())
+        num_genes = len(entrez_ids)
+
+        comat = np.empty((num_genes, num_genes,))
+        comat.fill(np.nan)
+
+        # keep a dict of gene pmids to speed things up
+        gene_pmids = {}
+
+        # helper func to retrieve/cache pmids associated with genes
+        def get_gene_pmids(entrez_id):
+            if entrez_id not in gene_pmids:
+                mask = gene_dat.concept_id == entrez_id
+                gene_pmids[entrez_id] = set(gene_dat[mask].pmid.values)
+
+            return gene_pmids[entrez_id]
+
+        # iterate over pairs of genes
+        for i, gene1 in enumerate(entrez_ids):
+            # get pubmed ids associated with gene 1
+            gene1_pmids = get_gene_pmids(gene1)
+
+            for j, gene2 in enumerate(entrez_ids):
+                # skip symmetric comparisons
+                if not np.isnan(comat[i, j]):
+                    continue
+
+                gene2_pmids = get_gene_pmids(gene2)
+
+                # compute gene-gene co-occurrence count
+                num_shared = len(gene1_pmids.intersection(gene2_pmids))
+
+                comat[i, j] = comat[j, i] = num_shared
+
+        # convert pmid mapping sets to lists for serialization
+        # for entrez_id in gene_pmids:
+        #     gene_pmids[entrez_id] = list(gene_pmids[entrez_id])
+
+        # encoder to convert int64 elements to generic ints and sets to lists during
+        # serialization
+        def encoder(object):
+            if isinstance(object, np.generic):
+                return object.item()
+            elif isinstance(object, set):
+                return list(object)
+
+        # store gene -> pmid mapping as json
+        with open(output[0], "w") as fp:
+            fp.write(json.dumps(gene_pmids, default=encoder))
+
+        # store gene-gene co-occurrence matrix
+        comat = pd.DataFrame(comat, index=entrez_ids, columns=entrez_ids)
+        comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[1])
 
 #
 # computes chemical-gene co-occurrence counts for:
