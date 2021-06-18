@@ -44,16 +44,61 @@ rule all:
         expand(join(out_dir, 'all-genes/chemicals/{chemical}.feather'), chemical=config['chemicals'].keys()),
         expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys()),
         join(out_dir, 'pmids/genes-pmids.json'),
-        join(out_dir, 'co-occurrence/genes.feather')
+        join(out_dir, 'pmids/disease-pmids.json'),
+        join(out_dir, 'co-occurrence/genes.feather'),
+        join(out_dir, 'co-occurrence/diseases.feather'),
+        join(out_dir, 'co-occurrence/genes-diseases.feather')
+
+# rule gene_disease_comat:
+#     input:
+#         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
+#         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
+#     output:
+#         join(out_dir, 'pmids/genes-pmids.json'),
+#         join(out_dir, 'co-occurrence/genes.feather')
+#     run:
 
 rule gene_disease_comat:
     input:
-        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
-        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
-    output:
         join(out_dir, 'pmids/genes-pmids.json'),
-        join(out_dir, 'co-occurrence/genes.feather')
+        join(out_dir, 'pmids/disease-pmids.json')
+    output:
+        join(out_dir, 'co-occurrence/genes-diseases.feather')
     run:
+        # load gene and drug pmid mappings
+        with open(input[0]) as fp:
+            all_gene_pmids = json.load(fp)
+
+        with open(input[1]) as fp:
+            all_disease_pmids = json.load(fp)
+
+        # create empty matrix to store gene-disease co-occurrence counts
+        entrez_ids = all_gene_pmids.keys()
+        num_genes = len(entrez_ids)
+
+        mesh_ids = all_disease_pmids.keys()
+        num_diseases = len(mesh_ids)
+
+        comat = np.empty((num_genes, num_diseases))
+        comat.fill(np.nan)
+
+        # iterate over pairs of genes
+        for i, gene in enumerate(entrez_ids):
+            # get pubmed ids associated with gene
+            gene_pmids = all_gene_pmids[gene]
+
+            for j, disease in enumerate(mesh_ids):
+                # get pubmed ids associated with disease
+                disease_pmids = all_disease_pmids[disease]
+
+                # compute gene-disease co-occurrence count
+                num_shared = len(set(gene_pmids).intersection(disease_pmids))
+
+                comat[i, j] = num_shared
+
+        # store gene-disease co-occurrence matrix
+        comat = pd.DataFrame(comat, index=entrez_ids, columns=mesh_ids)
+        comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[0])
 
 rule gene_gene_comat:
     input:
@@ -92,6 +137,68 @@ rule gene_gene_comat:
         # store gene-gene co-occurrence matrix
         comat = pd.DataFrame(comat, index=entrez_ids, columns=entrez_ids)
         comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[0])
+
+rule disease_disease_comat:
+    input:
+        join(out_dir, 'pmids/disease-pmids.json')
+    output:
+        join(out_dir, 'co-occurrence/diseases.feather')
+    run:
+        # load disease/pmid mapping
+        with open(input[0]) as fp:
+            disease_pmids = json.load(fp)
+
+        # create empty matrix to store disease-disease co-occurrence counts
+        mesh_ids = disease_pmids.keys()
+        num_diseases = len(mesh_ids)
+
+        comat = np.empty((num_diseases, num_diseases))
+        comat.fill(np.nan)
+
+        # iterate over pairs of diseases
+        for i, disease1 in enumerate(mesh_ids):
+            # get pubmed ids associated with disease 1
+            disease1_pmids = disease_pmids[disease1]
+
+            for j, disease2 in enumerate(mesh_ids):
+                # skip symmetric comparisons
+                if not np.isnan(comat[i, j]):
+                    continue
+
+                disease2_pmids = disease_pmids[disease2]
+
+                # compute disease-disease co-occurrence count
+                num_shared = len(set(disease1_pmids).intersection(disease2_pmids))
+
+                comat[i, j] = comat[j, i] = num_shared
+
+        # store disease-disease co-occurrence matrix
+        comat = pd.DataFrame(comat, index=mesh_ids, columns=mesh_ids)
+        comat.reset_index().rename(columns={'index': 'mesh_id'}).to_feather(output[0])
+
+rule disease_pmid_mapping:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
+    output:
+        join(out_dir, 'pmids/disease-pmids.json')
+    run:
+        # load disease data
+        disease_dat = pd.read_feather(input[0])
+
+        # iterate over diseases
+        mesh_ids = list(disease_dat.concept_id.unique())
+        num_diseases = len(mesh_ids)
+
+        # iterate over diseases and retrieve associated pubmed ids for each
+        disease_pmids = {}
+
+        for mesh_id in mesh_ids:
+            mask = disease_dat.concept_id == mesh_id
+            disease_pmids[mesh_id] = set(disease_dat[mask].pmid.values)
+
+        # store disease -> pmid mapping as json
+        with open(output[0], "w") as fp:
+            fp.write(json.dumps(disease_pmids, default=encoder))
 
 rule gene_pmid_mapping:
     input:
