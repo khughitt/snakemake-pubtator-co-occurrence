@@ -38,15 +38,17 @@ def encoder(object):
 #
 rule all:
     input:
+        expand(join(out_dir, 'all-genes/chemicals/{chemical}.feather'), chemical=config['chemicals'].keys()),
+        expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys()),
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather'),
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather'),
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
-        expand(join(out_dir, 'all-genes/chemicals/{chemical}.feather'), chemical=config['chemicals'].keys()),
-        expand(join(out_dir, 'all-chemicals/genes/{gene}.feather'), gene=config['genes'].keys()),
-        join(out_dir, 'pmids/genes-pmids.json'),
+        join(out_dir, 'pmids/gene-pmids.json'),
+        join(out_dir, 'pmids/chemical-pmids.json'),
         join(out_dir, 'pmids/disease-pmids.json'),
         join(out_dir, 'co-occurrence/genes.feather'),
         join(out_dir, 'co-occurrence/diseases.feather'),
+        join(out_dir, 'co-occurrence/chemicals.feather'),
         join(out_dir, 'co-occurrence/genes-diseases.feather')
 
 # rule gene_disease_comat:
@@ -54,13 +56,13 @@ rule all:
 #         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
 #         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
 #     output:
-#         join(out_dir, 'pmids/genes-pmids.json'),
+#         join(out_dir, 'pmids/gene-pmids.json'),
 #         join(out_dir, 'co-occurrence/genes.feather')
 #     run:
 
 rule gene_disease_comat:
     input:
-        join(out_dir, 'pmids/genes-pmids.json'),
+        join(out_dir, 'pmids/gene-pmids.json'),
         join(out_dir, 'pmids/disease-pmids.json')
     output:
         join(out_dir, 'co-occurrence/genes-diseases.feather')
@@ -102,7 +104,7 @@ rule gene_disease_comat:
 
 rule gene_gene_comat:
     input:
-        join(out_dir, 'pmids/genes-pmids.json')
+        join(out_dir, 'pmids/gene-pmids.json')
     output:
         join(out_dir, 'co-occurrence/genes.feather')
     run:
@@ -200,11 +202,73 @@ rule disease_pmid_mapping:
         with open(output[0], "w") as fp:
             fp.write(json.dumps(disease_pmids, default=encoder))
 
+rule chemical_chemical_comat:
+    input:
+        join(out_dir, 'pmids/chemical-pmids.json')
+    output:
+        join(out_dir, 'co-occurrence/chemicals.feather')
+    run:
+        # load chemical/pmid mapping
+        with open(input[0]) as fp:
+            chemical_pmids = json.load(fp)
+
+        # create empty matrix to store chemical-chemical co-occurrence counts
+        mesh_ids = chemical_pmids.keys()
+        num_chemicals = len(mesh_ids)
+
+        comat = np.empty((num_chemicals, num_chemicals))
+        comat.fill(np.nan)
+
+        # iterate over pairs of chemicals
+        for i, chemical1 in enumerate(mesh_ids):
+            # get pubmed ids associated with chemical 1
+            chemical1_pmids = chemical_pmids[chemical1]
+
+            for j, chemical2 in enumerate(mesh_ids):
+                # skip symmetric comparisons
+                if not np.isnan(comat[i, j]):
+                    continue
+
+                chemical2_pmids = chemical_pmids[chemical2]
+
+                # compute chemical-chemical co-occurrence count
+                num_shared = len(set(chemical1_pmids).intersection(chemical2_pmids))
+
+                comat[i, j] = comat[j, i] = num_shared
+
+        # store chemical-chemical co-occurrence matrix
+        comat = pd.DataFrame(comat, index=mesh_ids, columns=mesh_ids)
+        comat.reset_index().rename(columns={'index': 'mesh_id'}).to_feather(output[0])
+
+rule chemical_pmid_mapping:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather')
+    output:
+        join(out_dir, 'pmids/chemical-pmids.json')
+    run:
+        # load chemical data
+        chemical_dat = pd.read_feather(input[0])
+
+        # iterate over chemicals
+        mesh_ids = list(chemical_dat.concept_id.unique())
+        num_chemicals = len(mesh_ids)
+
+        # iterate over chemicals and retrieve associated pubmed ids for each
+        chemical_pmids = {}
+
+        for mesh_id in mesh_ids:
+            mask = chemical_dat.concept_id == mesh_id
+            chemical_pmids[mesh_id] = set(chemical_dat[mask].pmid.values)
+
+        # store chemical -> pmid mapping as json
+        with open(output[0], "w") as fp:
+            fp.write(json.dumps(chemical_pmids, default=encoder))
+
 rule gene_pmid_mapping:
     input:
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
     output:
-        join(out_dir, 'pmids/genes-pmids.json')
+        join(out_dir, 'pmids/gene-pmids.json')
     run:
         # load gene data
         gene_dat = pd.read_feather(input[0])
