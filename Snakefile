@@ -113,6 +113,22 @@ rule gene_chemical_comat:
         num_genes = len(entrez_ids)
 
         mesh_ids = all_chemical_pmids.keys()
+
+        # exclude "-" and chemicals with fewer associated pmids
+        # TODO: move upstream prior to next major run..
+
+        # note: in current version of pipeline, setting a minimum pmid count of "50" for
+        # the chemical data results in 17,811/77,041 chemicals being included.. 
+        chem_pmid_counts = pd.Series([len(a) for a in all_chemical_pmids.values()],
+                                     index=all_chemical_pmids.keys())
+
+        MIN_PMID_COUNT = 50
+
+        to_keep = chem_pmid_counts[chem_pmid_counts >= MIN_PMID_COUNT].index
+        mesh_ids = [x for x in mesh_ids if x in to_keep]
+
+        mesh_ids.remove('-')
+
         num_chemicals = len(mesh_ids)
 
         comat = np.empty((num_genes, num_chemicals))
