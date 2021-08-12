@@ -49,16 +49,8 @@ rule all:
         join(out_dir, 'co-occurrence/genes.feather'),
         join(out_dir, 'co-occurrence/diseases.feather'),
         join(out_dir, 'co-occurrence/chemicals.feather'),
-        join(out_dir, 'co-occurrence/genes-diseases.feather')
-
-# rule gene_disease_comat:
-#     input:
-#         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather'),
-#         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
-#     output:
-#         join(out_dir, 'pmids/gene-pmids.json'),
-#         join(out_dir, 'co-occurrence/genes.feather')
-#     run:
+        join(out_dir, 'co-occurrence/genes-diseases.feather'),
+        join(out_dir, 'co-occurrence/genes-chemicals.feather')
 
 rule gene_disease_comat:
     input:
@@ -99,6 +91,53 @@ rule gene_disease_comat:
                 comat[i, j] = num_shared
 
         # store gene-disease co-occurrence matrix
+        comat = pd.DataFrame(comat, index=entrez_ids, columns=mesh_ids)
+        comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[0])
+
+rule gene_chemical_comat:
+    input:
+        join(out_dir, 'pmids/gene-pmids.json'),
+        join(out_dir, 'pmids/chemical-pmids.json')
+    output:
+        join(out_dir, 'co-occurrence/genes-chemicals.feather')
+    run:
+        # load gene and drug pmid mappings
+        with open(input[0]) as fp:
+            all_gene_pmids = json.load(fp)
+
+        with open(input[1]) as fp:
+            all_chemical_pmids = json.load(fp)
+
+        # create empty matrix to store gene-chemical co-occurrence counts
+        entrez_ids = all_gene_pmids.keys()
+        num_genes = len(entrez_ids)
+
+        mesh_ids = all_chemical_pmids.keys()
+        num_chemicals = len(mesh_ids)
+
+        comat = np.empty((num_genes, num_chemicals))
+        comat.fill(np.nan)
+
+        print(f"Processing {num_genes} genes...")
+
+        # iterate over pairs of genes
+        for i, gene in enumerate(entrez_ids):
+            # get pubmed ids associated with gene
+            gene_pmids = all_gene_pmids[gene]
+
+            if i % 100 == 0:
+                print(f"gene {i}/{num_genes}...")
+
+            for j, chemical in enumerate(mesh_ids):
+                # get pubmed ids associated with chemical
+                chemical_pmids = all_chemical_pmids[chemical]
+
+                # compute gene-chemical co-occurrence count
+                num_shared = len(set(gene_pmids).intersection(chemical_pmids))
+
+                comat[i, j] = num_shared
+
+        # store gene-chemical co-occurrence matrix
         comat = pd.DataFrame(comat, index=entrez_ids, columns=mesh_ids)
         comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[0])
 
@@ -210,7 +249,16 @@ rule chemical_chemical_comat:
     run:
         # load chemical/pmid mapping
         with open(input[0]) as fp:
-            chemical_pmids = json.load(fp)
+            unfiltered_chemical_pmids = json.load(fp)
+
+        # filter any chemicals with less than N citations; helps keep the co-occurrence
+        # matrix size more manageable while only losing relatively low-information
+        # low-citation counts..
+        chemical_pmids = {}
+
+        for mesh_id in unfiltered_chemical_pmids:
+            if len(unfiltered_chemical_pmids[mesh_id]) > config['concept_id_min_freq_chem']:
+                chemical_pmids[mesh_id] = unfiltered_chemical_pmids[mesh_id]
 
         # create empty matrix to store chemical-chemical co-occurrence counts
         mesh_ids = chemical_pmids.keys()
