@@ -52,6 +52,16 @@ rule all:
         join(out_dir, 'co-occurrence/genes-diseases.feather'),
         join(out_dir, 'co-occurrence/genes-chemicals.feather')
 
+rule copy_mesh_id_mappings:
+    input:
+        "data/mesh_chemical_mapping.tsv",
+        "data/mesh_disease_mapping.tsv"
+    output:
+        join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
+        join(out_dir, 'metadata/mesh_disease_mapping.tsv')
+    shell:
+        "cp {input} {output}"
+
 rule gene_disease_comat:
     input:
         join(out_dir, 'pmids/gene-pmids.json'),
