@@ -51,14 +51,17 @@ rule all:
         join(out_dir, 'co-occurrence/chemicals.feather'),
         join(out_dir, 'co-occurrence/genes-diseases.feather'),
         join(out_dir, 'co-occurrence/genes-chemicals.feather')
+        # join(out_dir, 'pmids/pmid-genes.json'),
 
 rule copy_mesh_id_mappings:
     input:
         "data/mesh_chemical_mapping.tsv",
         "data/mesh_disease_mapping.tsv"
+        "data/entrez_gene_mapping.tsv"
     output:
         join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
-        join(out_dir, 'metadata/mesh_disease_mapping.tsv')
+        join(out_dir, 'metadata/mesh_disease_mapping.tsv'),
+        join(out_dir, 'metadata/entrez_gene_mapping.tsv')
     shell:
         "cp {input} {output}"
 
@@ -363,6 +366,36 @@ rule gene_pmid_mapping:
             fp.write(json.dumps(gene_pmids, default=encoder))
 
 #
+# create a mapping from pmid to genes;
+# this can be used to exclude or down-weight articles which reference large numbers of
+# genes, and thus, and not very specific / informative.
+#
+# rule pmid_gene_mapping:
+#     input:
+#         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
+#     output:
+#         join(out_dir, 'pmids/pmid-genes.json')
+#     run:
+#         # load gene data
+#         gene_dat = pd.read_feather(input[0])
+#
+#         # iterate over pubmed ids
+#         pmids = list(gene_dat.pmid.unique())
+#         num_pmids = len(pmids)
+#
+#         # iterate over pubmed articles, and get associated genes.
+#         pmid_genes = {}
+#
+#         # for entrez_id in entrez_ids:
+#         for pmid in pmids:
+#             mask = gene_dat.pmid == pmid
+#             pmid_genes[pmid] = set(gene_dat[mask].concept_id.values)
+#
+#         # store gene -> pmid mapping as json
+#         with open(output[0], "w") as fp:
+#             fp.write(json.dumps(pmid_genes, default=encoder))
+
+#
 # computes chemical-gene co-occurrence counts for:
 #
 # - all chemicals
@@ -455,7 +488,7 @@ rule genes_to_chemicals:
         counts.columns = ['entrez', 'n']
 
         # load gene annotations
-        grch37 = pd.read_csv("data/grch37-annotables.tsv", sep="\t")
+        grch37 = pd.read_csv("data/entrez_gene_mapping.tsv", sep="\t")
 
         # drop genes with missing entrez ids and fix type for remaining ids
         grch37 = grch37[~grch37.entrez.isna()]
@@ -510,7 +543,7 @@ rule create_gene_subset:
 
         # load list of GRCh37 entrez gene ids
         # source: https://github.com/stephenturner/annotables
-        grch37 = pd.read_csv("data/grch37-annotables.tsv", sep="\t")
+        grch37 = pd.read_csv("data/entrez_gene_mapping.tsv", sep="\t")
 
         # drop genes with missing entrez ids and fix type for remaining ids
         grch37 = grch37[~grch37.entrez.isna()]
