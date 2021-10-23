@@ -1,9 +1,9 @@
 conda-forge::python>=3.9
 ipython
-modin
 numpy
 pandas
 pyarrow>=3
+biothings_client
 scipy
 scikit-learn
 snakemake-minimal

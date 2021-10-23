@@ -50,7 +50,9 @@ rule all:
         join(out_dir, 'co-occurrence/diseases.feather'),
         join(out_dir, 'co-occurrence/chemicals.feather'),
         join(out_dir, 'co-occurrence/genes-diseases.feather'),
-        join(out_dir, 'co-occurrence/genes-chemicals.feather')
+        join(out_dir, 'co-occurrence/genes-chemicals.feather'),
+        join(out_dir, 'identifiers/human_entrez_ids.txt'),
+        join(out_dir, 'gene-counts/pmid_gene_counts.feather')
         # join(out_dir, 'pmids/pmid-genes.json'),
 
 rule copy_mesh_id_mappings:
@@ -503,6 +505,18 @@ rule genes_to_chemicals:
         # store result
         counts.to_feather(output[0])
 
+# count number of unique genes associated with each pmid, after filtering..
+rule pubmed_gene_counts:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
+    output:
+        join(out_dir, 'gene-counts/pmid_gene_counts.feather')
+    run:
+        dat = pd.read_feather(input[0])
+ 
+        counts = dat.groupby('pmid').concept_id.nunique()
+        counts.rename("num").reset_index().to_feather(output[0])
+
 rule create_disease_subset:
     input:
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
@@ -531,29 +545,23 @@ rule create_chemical_subset:
 
 rule create_gene_subset:
     input:
-        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv')
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human.tsv'),
+        join(out_dir, 'identifiers/human_entrez_ids.txt')
     output:
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_genes.feather')
     run:
         # load filtered dataset
         dat = pd.read_csv(input[0], sep='\t')
 
-        # create a subset with only gene entries
-        dat = dat[(dat.type == 'Gene') & (dat.resource == 'GNormPlus')]
+        # load list of human entrez gene identifiers
+        with open(input[1]) as fp:
+            entrez_ids = [x.strip() for x in fp.readlines()]
 
-        # load list of GRCh37 entrez gene ids
-        # source: https://github.com/stephenturner/annotables
-        grch37 = pd.read_csv("data/entrez_gene_mapping.tsv", sep="\t")
+        # create a subset with only gene entries, restricted to GNormPlus/Human Entrez
+        # gene identifiers..
+        entrez_mask = dat.concept_id.isin(entrez_ids)
 
-        # drop genes with missing entrez ids and fix type for remaining ids
-        grch37 = grch37[~grch37.entrez.isna()]
-        grch37 = grch37.astype({'entrez': int}).astype({'entrez': str})
-
-        entrez_gids = grch37.entrez.values
-
-        # limit to concept ids to human entrez gene identifiers
-        mask = dat.concept_id.isin(entrez_gids)
-        dat = dat[mask]
+        dat = dat[(dat.type == 'Gene') & (dat.resource == 'GNormPlus') & entrez_mask]
 
         # store gene subset
         dat.reset_index(drop=True).to_feather(output[0])
@@ -648,3 +656,9 @@ rule filter_dataset:
 
         # save filtered dataset
         dat.reset_index(drop=True).to_csv(output[0], sep='\t')
+
+rule get_entrez_ids:
+    output:
+        join(out_dir, 'identifiers/human_entrez_ids.txt')
+    script:
+        "scripts/create_entrez_human_id_list.R"
