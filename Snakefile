@@ -52,20 +52,10 @@ rule all:
         join(out_dir, 'co-occurrence/genes-diseases.feather'),
         join(out_dir, 'co-occurrence/genes-chemicals.feather'),
         join(out_dir, 'identifiers/human_entrez_ids.txt'),
-        join(out_dir, 'gene-counts/pmid_gene_counts.feather')
-        # join(out_dir, 'pmids/pmid-genes.json'),
-
-rule copy_mesh_id_mappings:
-    input:
-        "data/mesh_chemical_mapping.tsv",
-        "data/mesh_disease_mapping.tsv"
-        "data/entrez_gene_mapping.tsv"
-    output:
-        join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
+        join(out_dir, 'gene-counts/pmid_gene_counts.feather'),
         join(out_dir, 'metadata/mesh_disease_mapping.tsv'),
-        join(out_dir, 'metadata/entrez_gene_mapping.tsv')
-    shell:
-        "cp {input} {output}"
+        join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
+        # join(out_dir, 'pmids/pmid-genes.json'),
 
 rule gene_disease_comat:
     input:
@@ -656,6 +646,26 @@ rule filter_dataset:
 
         # save filtered dataset
         dat.reset_index(drop=True).to_csv(output[0], sep='\t')
+
+rule create_mesh_chem_mapping:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_chemicals.feather')
+    output:
+        join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
+    params:
+        field='chemical'
+    script:
+        "scripts/create_mesh_mapping.R"
+
+rule create_mesh_disease_mapping:
+    input:
+        join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
+    output:
+        join(out_dir, 'metadata/mesh_disease_mapping.tsv'),
+    params:
+        field='disease'
+    script:
+        "scripts/create_mesh_mapping.R"
 
 rule get_entrez_ids:
     output:
