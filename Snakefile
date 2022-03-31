@@ -18,6 +18,8 @@ from scipy import sparse
 from scipy.io import mmread, mmwrite
 from sklearn.preprocessing import scale
 
+configfile: "config/config.yml"
+
 random.seed(config['random_seed'])
 
 out_dir = join(config["out_dir"], config["version"])
@@ -645,7 +647,8 @@ rule filter_dataset:
         print(f"Removed {num_entries_orig} rows in total ({num_pmids_orig} articles)") 
 
         # save filtered dataset
-        dat.reset_index(drop=True).to_csv(output[0], sep='\t')
+        #dat.reset_index(drop=True).to_csv(output[0], sep='\t')
+        dat.to_csv(output[0], index=False, sep='\t')
 
 rule create_mesh_chem_mapping:
     input:
