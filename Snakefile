@@ -632,9 +632,10 @@ rule filter_dataset:
         # concept_id filtering stats
         mask_counts = mask.value_counts()
 
-        num_kept = mask_counts[True]
+        num_kept = 0 if True not in mask_counts else mask_counts[True]
         num_total = dat.shape[0]
-        num_dropped = mask_counts[False]
+
+        num_dropped = 0 if False not in mask_counts else mask_counts[False]
 
         pct_dropped = 100 * (num_dropped / num_total)
 
