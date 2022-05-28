@@ -23,6 +23,18 @@ if snakemake.config['debug']:
 num_pmids_orig = dat.pmid.nunique()
 num_entries_orig = dat.shape[0]
 
+# remove entries whose "metnions" field contains tabs/newline characters;
+# these are often associated with erroneous entries
+mask = ~(dat.mentions.str.contains("\n") | dat.mentions.str.contains("\t"))
+
+num_dropped = (~mask).sum()
+pct_dropped = 100 * (num_dropped / dat.shape[0])
+
+msg = "Excluding %d / %d (%0.2f%%) entries whose 'mentions' field contains tabs/newline characters."
+print(msg % (num_dropped, dat.shape[0], pct_dropped))
+
+dat = dat[mask]
+
 # limit analysis to articles relating to human research
 # note: since it is possible an article could include annotations for both
 # "human" and "mouse", etc., it may be useful to limit the analysis to articles

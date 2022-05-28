@@ -6,17 +6,8 @@ KH (May 18, 2021)
 Processes PubtatorCentral annotations and generates some useful "clean" versions of the
 data, along with some co-occurrence matrices relating to different concepts, for Human.
 """
-import itertools
-import json
-import os
 import random
-import time
-import numpy as np
-import pandas as pd
 from os.path import join
-from scipy import sparse
-from scipy.io import mmread, mmwrite
-from sklearn.preprocessing import scale
 
 configfile: "config/config.yml"
 
@@ -26,14 +17,6 @@ out_dir = join(config["out_dir"], config["version"])
 
 if config['debug']:
     out_dir = join(out_dir, 'sampled')
-
-# encoder to convert int64 elements to generic ints and sets to lists during
-# json serialization
-def encoder(object):
-    if isinstance(object, np.generic):
-        return object.item()
-    elif isinstance(object, set):
-        return list(object)
 
 #
 # Snakemake rules
@@ -55,9 +38,8 @@ rule all:
         join(out_dir, 'gene-counts/pmid_gene_counts.feather'),
         join(out_dir, 'metadata/mesh_disease_mapping.tsv'),
         join(out_dir, 'metadata/mesh_chemical_mapping.tsv'),
-        # join(out_dir, 'pmids/pmid-genes.json'),
 
-rule gene_disease_comat:
+rule create_gene_disease_comat:
     input:
         join(out_dir, 'pmids/gene-pmids.json'),
         join(out_dir, 'pmids/disease-pmids.json')
@@ -66,7 +48,7 @@ rule gene_disease_comat:
     script:
         "scripts/create_gene_disease_comat.py"
 
-rule gene_chemical_comat:
+rule create_gene_chemical_comat:
     input:
         join(out_dir, 'pmids/gene-pmids.json'),
         join(out_dir, 'pmids/chemical-pmids.json')
@@ -75,7 +57,7 @@ rule gene_chemical_comat:
     script:
         "scripts/create_gene_chemical_comat.py"
 
-rule gene_gene_comat:
+rule create_gene_gene_comat:
     input:
         join(out_dir, 'pmids/gene-pmids.json')
     output:
@@ -83,7 +65,7 @@ rule gene_gene_comat:
     script:
         "scripts/create_gene_gene_comat.py"
 
-rule disease_disease_comat:
+rule create_disease_disease_comat:
     input:
         join(out_dir, 'pmids/disease-pmids.json')
     output:
@@ -91,7 +73,7 @@ rule disease_disease_comat:
     script:
         "scripts/create_disease_disease_comat.py"
 
-rule disease_pmid_mapping:
+rule create_disease_pmid_mapping:
     input:
         join(out_dir, 'filtered/bioconcepts2pubtatorcentral_filtered_human_diseases.feather')
     output:
@@ -186,7 +168,7 @@ rule create_mesh_disease_mapping:
     script:
         "scripts/create_mesh_mapping.R"
 
-rule get_entrez_ids:
+rule create_entrez_human_id_list:
     output:
         join(out_dir, 'identifiers/human_entrez_ids.txt')
     script:
