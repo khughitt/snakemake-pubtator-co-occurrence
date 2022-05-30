@@ -8,6 +8,9 @@ import pandas as pd
 # load disease data
 disease_dat = pd.read_feather(snakemake.input[0])
 
+# convert concept id to pyarrow/string type (~7x faster in testing..)
+disease_dat.concept_id = disease_dat.concept_id.astype('string[pyarrow]')
+
 # iterate over diseases
 mesh_ids = list(disease_dat.concept_id.unique())
 num_diseases = len(mesh_ids)

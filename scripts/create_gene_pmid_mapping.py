@@ -8,6 +8,9 @@ import pandas as pd
 # load gene data
 gene_dat = pd.read_feather(snakemake.input[0])
 
+# convert concept id to pyarrow/string type (~7x faster in testing..)
+gene_dat.concept_id = gene_dat.concept_id.astype('string[pyarrow]')
+
 # iterate over genes
 entrez_ids = list(gene_dat.concept_id.unique())
 num_genes = len(entrez_ids)
