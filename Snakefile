@@ -138,6 +138,10 @@ rule create_gene_subset:
     script:
         "scripts/create_gene_subset.py"
 
+# uses externally-generated pubmed embeddings to split articles into batches based on
+# article similarity in the embedding space
+rule chunk_articles:
+
 # note: currently saving filtered data as uncompressed .tsv file instead of feather due
 # to the higher memory usage for writing compressed feather files. (kh may21)
 rule filter_bioconcepts:

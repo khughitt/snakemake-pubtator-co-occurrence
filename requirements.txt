@@ -2,7 +2,7 @@ conda-forge::python>=3.9
 ipython
 numpy
 pandas
-pyarrow>=3
+pyarrow>=7
 biothings_client
 scipy
 scikit-learn

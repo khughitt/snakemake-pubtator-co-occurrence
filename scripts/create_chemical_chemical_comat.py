@@ -22,7 +22,7 @@ for mesh_id in unfiltered_chemical_pmids:
 mesh_ids = chemical_pmids.keys()
 num_chemicals = len(mesh_ids)
 
-comat = np.empty((num_chemicals, num_chemicals))
+comat = np.empty((num_chemicals, num_chemicals), dtype=np.uint32)
 comat.fill(np.nan)
 
 # iterate over pairs of chemicals

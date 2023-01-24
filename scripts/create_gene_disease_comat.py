@@ -19,7 +19,7 @@ num_genes = len(entrez_ids)
 mesh_ids = all_disease_pmids.keys()
 num_diseases = len(mesh_ids)
 
-comat = np.empty((num_genes, num_diseases))
+comat = np.empty((num_genes, num_diseases), dtype=np.uint32)
 comat.fill(np.nan)
 
 # iterate over pairs of genes

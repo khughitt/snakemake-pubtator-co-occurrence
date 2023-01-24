@@ -13,7 +13,7 @@ with open(snakemake.input[0]) as fp:
 mesh_ids = disease_pmids.keys()
 num_diseases = len(mesh_ids)
 
-comat = np.empty((num_diseases, num_diseases))
+comat = np.empty((num_diseases, num_diseases), dtype=np.uint32)
 comat.fill(np.nan)
 
 # iterate over pairs of diseases

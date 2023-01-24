@@ -35,7 +35,7 @@ mesh_ids.remove('-')
 
 num_chemicals = len(mesh_ids)
 
-comat = np.empty((num_genes, num_chemicals))
+comat = np.empty((num_genes, num_chemicals), dtype=np.uint32)
 comat.fill(np.nan)
 
 print(f"Processing {num_genes} genes...")
@@ -59,4 +59,4 @@ for i, gene in enumerate(entrez_ids):
 
 # store gene-chemical co-occurrence matrix
 comat = pd.DataFrame(comat, index=entrez_ids, columns=mesh_ids)
-comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(output[0])
+comat.reset_index().rename(columns={'index': 'entrez_id'}).to_feather(snakemake.output[0])
